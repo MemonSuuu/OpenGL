@@ -1,0 +1,10 @@
+^C:\USERS\RAMON\DOCUMENTS\C++\OPENGL\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/ramon/Documents/C++/OpenGL -BC:/Users/ramon/Documents/C++/OpenGL/build --check-stamp-file C:/Users/ramon/Documents/C++/OpenGL/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

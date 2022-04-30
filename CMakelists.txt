@@ -1,0 +1,9 @@
+cmake_minimum_required(VERSION 3.0.0)
+project(OpenGLPractice)
+
+add_executable(${PROJECT_NAME} main.cpp)
+
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GL GLEW::GLEW glfw)
