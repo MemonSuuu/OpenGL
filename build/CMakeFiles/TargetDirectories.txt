@@ -1,3 +1,0 @@
-C:/Users/ramon/Documents/C++/OpenGL/build/CMakeFiles/OpenGLPractice.dir
-C:/Users/ramon/Documents/C++/OpenGL/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/ramon/Documents/C++/OpenGL/build/CMakeFiles/ZERO_CHECK.dir
