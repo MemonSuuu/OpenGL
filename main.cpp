@@ -18,6 +18,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 
 GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path){
@@ -108,36 +109,65 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	return ProgramID;
 }
 
-class VertexBuffer {
-    private:
-    //identify vertex buffer
-        GLuint vertexbuffer;
+struct Vertex{
+    glm::vec3 position;
+    glm::vec3 color;
+};
+
+class Buffer {
+    protected:
+        GLuint bufferID;
+        const GLenum mode;
     public:
-        VertexBuffer(const std::vector<float> &vertices){
-            // Generate 1 buffer, put the resulting identifier in vertexbuffer
-            glGenBuffers(1, &vertexbuffer);
-            // The following commands will talk about our 'vertexbuffer' buffer
-            glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-            // Give our vertices to OpenGL.
-            glBufferData(GL_ARRAY_BUFFER, vertices.size()*sizeof(float), vertices.data(), GL_STATIC_DRAW);
+        Buffer(GLenum mode, std::size_t size,const void *data):mode(mode){
+            glGenBuffers(1, &bufferID);
+            bind();
+            glBufferData(mode, size, data, GL_STATIC_DRAW);
+        }
+        ~Buffer(){
+            glDeleteBuffers(1, &bufferID);
+        }
+        void bind(){
+            glBindBuffer(mode, bufferID);
+        }
+        void unBind(){
+            glBindBuffer(mode, 0);
         }
         GLuint getBuffer(){
-            return vertexbuffer;
+            return bufferID;
         }
-        ~VertexBuffer(){
-            glDeleteBuffers(1, &vertexbuffer);
-        }
+};
+
+class VertexBuffer : public Buffer{
+    public:
+        VertexBuffer(const std::vector<Vertex> &vertices):Buffer(GL_ARRAY_BUFFER, vertices.size()*sizeof(float), static_cast<const void*>(vertices.data())){}
         void setAttributes(){
-            glEnableVertexAttribArray(0);
             glVertexAttribPointer(
-                0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
+                0,                  // attribute 0. Location of position in shader, denoted by location (layout = 0)
                 3,                  // size
                 GL_FLOAT,           // type
                 GL_FALSE,           // normalized?
-                0,                  // stride (for other data)
-                (void*)0            // array buffer offset (other data)
+                sizeof(Vertex),                  // stride (for other data)
+                reinterpret_cast<void*>(offsetof(Vertex, position))           // array buffer offset (other data)
             );
+            glEnableVertexAttribArray(0);//pos
+
+            glVertexAttribPointer(
+                1,                  // attribute 1. Location of color in shader
+                3,                  // size
+                GL_FLOAT,           // type
+                GL_FALSE,           // normalized?
+                sizeof(Vertex),                  // stride (for other data)
+                reinterpret_cast<void*>(offsetof(Vertex, color))            // array buffer offset (other data)
+            );
+            glEnableVertexAttribArray(1);//color
+
         }
+};
+
+class IndexBuffer : public Buffer{
+    public:
+        IndexBuffer(const std::vector<GLuint> &indices):Buffer(GL_ELEMENT_ARRAY_BUFFER, indices.size()*sizeof(GLuint), static_cast<const void*>(indices.data())){}
 };
 
 class VAO{
@@ -154,66 +184,37 @@ class VAO{
         }
 };
 
-class Projection{
-    private:
-        glm::mat4 projection;
-    public:
-        Projection(int width, int height){
-            // Projection matrix : 45° Field of View, 4:3 ratio, display range : 0.1 unit <-> 100 units
-            auto ratio = static_cast<float>(width)/static_cast<float>(height);
-            projection = glm::perspective(glm::radians(45.0f), ratio, 0.1f, 100.0f);
-        }
-        glm::mat4 getProj(){
-            return projection;
-        }
-};
-
-class View{
-    private:
-        glm::mat4 view;
-    public:
-        View(){
-            // Camera matrix
-            view = glm::lookAt(
-                glm::vec3(4,3,3), // Camera is at (4,3,3), in World Space
-                glm::vec3(0,0,0), // and looks at the origin
-                glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
-            );
-        }
-        glm::mat4 getView(){
-            return view;
-        }
-};
-
-class Model{
-    private:
-        glm::mat4 model;
-    public: 
-        Model(){
-            // Model matrix : an identity matrix (model will be at the origin)
-            glm::mat4 Model = glm::mat4(1.0f);
-        }
-        glm::mat4 getModel(){
-            return model;
-        }
-};
-
 class MVP{
     private:
-        glm::mat4 mvp;
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 projection;
     public:
         MVP(int width, int height){
-            Projection projection{width, height};
-            
-            View view{};
-  
-            Model model{};
+            // Projection matrix : 45° Field of View, 4:3 ratio, display range : 0.1 unit <-> 100 units
+            auto ratio = static_cast<float>(width)/static_cast<float>(height);
+            projection = glm::perspective(
+                glm::radians(45.0f),    //vertical fieald of view in radians, from 90 (very wide) to 30 (very zoomed in) 
+                ratio,                  //window width/height
+                0.1f,                   //near clipping plane, keep big (0.1)
+                100.0f                  //far clipping plane, keep little (100)
+            );  
 
-            // Our ModelViewProjection : multiplication of our 3 matrices
-            mvp = projection.getProj() * view.getView() * model.getModel(); // Remember, matrix multiplication is the other way around
+            // Camera matrix
+            // view = glm::lookAt(
+            //     glm::vec3(0,0,3), // where Camera is at in World Space
+            //     glm::vec3(0,0,0), // and looks at the origin
+            //     glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
+            // );
+
+            view = glm::mat4(1.0f);
+  
+            // Model matrix : an identity matrix (model will be at the origin)
+            model = glm::mat4(1.0f);
+
         }
         glm::mat4 getMVP(){
-            return mvp;
+            return projection*view*model;
         }
 };
 
@@ -225,7 +226,6 @@ int main(){
         fprintf( stderr, "Failed to initialize GLFW\n" );
         return -1;
     }
-    //FORLATER: checker.glewCheck();
 
     glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
 
@@ -237,7 +237,7 @@ int main(){
 
     //create a window
     GLFWwindow* window;
-    window = glfwCreateWindow(1040, 640, "Triangle", NULL, NULL);
+    window = glfwCreateWindow(1040, 780, "Triangle", NULL, NULL);
     if( window == NULL ){
         fprintf( stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible. Try the 2.1 version of the tutorials.\n" );
         glfwTerminate();
@@ -254,15 +254,23 @@ int main(){
 
     VAO vao{};
 
-    static const std::vector<float> vertices {
-            -.50f, -1.0f, 0.0f,
-            1.0f, 0.0f, 0.0f,
-            0.50f,  1.0f, 0.0f
+    static const std::vector<Vertex> vertices {
+        {{0.0f,0.0f,0.0f}, {1.0f,1.0f,1.0f}},
+        {{0.0f,1.0f, 0.0f}, {1.0f,1.0f,1.0f}},
+        {{1.0, 0.0f, 0.0f}, {1.0f,1.0f,1.0f}},
     };
-    
+
+    static const std::vector<GLuint> indices {
+        0, 1, 2, 2, 1, 3
+    };
+
     VertexBuffer vB(vertices);
 
-    MVP mvp{1040, 640};
+    vB.setAttributes();
+
+    IndexBuffer iB(indices);
+
+    MVP mvp{1040, 780};
     
     GLuint programID = LoadShaders("shaders/VertexShader.glsl", "shaders/FragmentShader.glsl");
 
@@ -274,23 +282,30 @@ int main(){
     glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
     do{
         // Clear the screen
-        glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+
+        // Send our transformation to the currently bound shader, in the "MVP" uniform
+        // This is done in the main loop since each model will have a different MVP matrix (At least for the M part)
+        glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(mvp.getMVP()));
 
         //use the shader
         glUseProgram(programID);
 
         // 1st attribute buffer : vertices
-        vB.setAttributes();
-
-        // Send our transformation to the currently bound shader, in the "MVP" uniform
-        // This is done in the main loop since each model will have a different MVP matrix (At least for the M part)
-        glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &mvp.getMVP()[0][0]);
+        
 
         // Draw the triangle !
         glBindVertexArray(vao.getID());
-        glDrawArrays(GL_TRIANGLES, 0, 3); // Starting from vertex 0; 3 vertices total -> 1 triangle
-        glDisableVertexAttribArray(0);
+        glDrawArrays(GL_TRIANGLES, 0, 3); // Starting from vertex 0; number of vertices (polygons*triangles*vertices)
+        // glDrawElements(
+        //     GL_TRIANGLES,
+        //     indices.size(),
+        //     GL_UNSIGNED_INT,
+        //     nullptr
+        // );
+        // glDisableVertexAttribArray(0);
+        // glDisableVertexAttribArray(1);
         
         // Swap buffers
         glfwSwapBuffers(window);
