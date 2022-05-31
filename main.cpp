@@ -109,11 +109,6 @@ GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path
 	return ProgramID;
 }
 
-struct Vertex{
-    glm::vec3 position;
-    glm::vec3 color;
-};
-
 class Buffer {
     protected:
         GLuint bufferID;
@@ -138,30 +133,35 @@ class Buffer {
         }
 };
 
-class VertexBuffer : public Buffer{
+class PosBuffer : public Buffer{
     public:
-        VertexBuffer(const std::vector<Vertex> &vertices):Buffer(GL_ARRAY_BUFFER, vertices.size()*sizeof(float), static_cast<const void*>(vertices.data())){}
+        PosBuffer(const std::vector<float> &vertices):Buffer(GL_ARRAY_BUFFER, vertices.size()*sizeof(float), static_cast<const void*>(vertices.data())){}
         void setAttributes(){
+            glEnableVertexAttribArray(0);
             glVertexAttribPointer(
-                0,                  // attribute 0. Location of position in shader, denoted by location (layout = 0)
-                3,                  // size
-                GL_FLOAT,           // type
-                GL_FALSE,           // normalized?
-                sizeof(Vertex),                  // stride (for other data)
-                reinterpret_cast<void*>(offsetof(Vertex, position))           // array buffer offset (other data)
+                0,
+                3,
+                GL_FLOAT,
+                GL_FALSE,
+                3*sizeof(float),
+                static_cast<const void*>(0)
             );
-            glEnableVertexAttribArray(0);//pos
+        }
+};
 
+class ColorBuffer : public Buffer{
+    public:
+        ColorBuffer(const std::vector<float> &vertices):Buffer(GL_ARRAY_BUFFER, vertices.size()*sizeof(float), static_cast<const void*>(vertices.data())){}
+        void setAttributes(){
+                glEnableVertexAttribArray(1);
             glVertexAttribPointer(
-                1,                  // attribute 1. Location of color in shader
-                3,                  // size
-                GL_FLOAT,           // type
-                GL_FALSE,           // normalized?
-                sizeof(Vertex),                  // stride (for other data)
-                reinterpret_cast<void*>(offsetof(Vertex, color))            // array buffer offset (other data)
+                1,
+                3,
+                GL_FLOAT,
+                GL_FALSE,
+                3*sizeof(float),
+                static_cast<const void*>(0)
             );
-            glEnableVertexAttribArray(1);//color
-
         }
 };
 
@@ -201,13 +201,13 @@ class MVP{
             );  
 
             // Camera matrix
-            // view = glm::lookAt(
-            //     glm::vec3(0,0,3), // where Camera is at in World Space
-            //     glm::vec3(0,0,0), // and looks at the origin
-            //     glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
-            // );
+            view = glm::lookAt(
+                glm::vec3(3,3,3), // where Camera is at in World Space
+                glm::vec3(0,0,0), // and looks at the origin
+                glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
+            );
 
-            view = glm::mat4(1.0f);
+            // view = glm::mat4(1.0f);
   
             // Model matrix : an identity matrix (model will be at the origin)
             model = glm::mat4(1.0f);
@@ -252,21 +252,47 @@ int main(){
         return -1;
     }
 
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
     VAO vao{};
 
-    static const std::vector<Vertex> vertices {
-        {{0.0f,0.0f,0.0f}, {1.0f,1.0f,1.0f}},
-        {{0.0f,1.0f, 0.0f}, {1.0f,1.0f,1.0f}},
-        {{1.0, 0.0f, 0.0f}, {1.0f,1.0f,1.0f}},
+    static const std::vector<float> posVert{
+        0.0f, 0.0f, 0.0f, 
+        0.0f, 1.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        1.0f, 1.0f, 0.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f, 0.0f, 1.0f,
+        0.0f, 1.0f, 1.0f,
+        0.0f, 0.0f, 1.0f, 
+    };
+
+    static const std::vector<float> colVert{
+        1.0f, 0.0f, 1.0f,
+        1.0f, 1.0f, 0.0f,
+        0.5f, 1.0f, 1.0f,
+        1.0f, 0.5f, 1.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f,
+        1.0f, 0.0f, 0.0f,
+        0.5f, 0.0f, 1.0f
     };
 
     static const std::vector<GLuint> indices {
-        0, 1, 2, 2, 1, 3
+        0, 1, 2, 2, 1, 3, //1 face
+        2, 3, 4, 4, 2, 5,
+        3, 1, 4, 4, 1, 6,
+        1, 6, 0, 0, 6, 7,
+        0, 2, 5, 5, 0, 7, 
+        4, 5, 6, 6, 5, 7
     };
 
-    VertexBuffer vB(vertices);
+    PosBuffer pB(posVert);
+    pB.setAttributes();
 
-    vB.setAttributes();
+    ColorBuffer cB(colVert);
+    cB.setAttributes();
 
     IndexBuffer iB(indices);
 
@@ -283,7 +309,7 @@ int main(){
     do{
         // Clear the screen
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Send our transformation to the currently bound shader, in the "MVP" uniform
         // This is done in the main loop since each model will have a different MVP matrix (At least for the M part)
@@ -296,14 +322,14 @@ int main(){
         
 
         // Draw the triangle !
-        glBindVertexArray(vao.getID());
-        glDrawArrays(GL_TRIANGLES, 0, 3); // Starting from vertex 0; number of vertices (polygons*triangles*vertices)
-        // glDrawElements(
-        //     GL_TRIANGLES,
-        //     indices.size(),
-        //     GL_UNSIGNED_INT,
-        //     nullptr
-        // );
+        // glBindVertexArray(vao.getID());
+        // glDrawArrays(GL_TRIANGLES, 0, 3); // Starting from vertex 0; number of vertices (polygons*triangles*vertices)
+        glDrawElements(
+            GL_TRIANGLES,
+            indices.size(),
+            GL_UNSIGNED_INT,
+            nullptr
+        );
         // glDisableVertexAttribArray(0);
         // glDisableVertexAttribArray(1);
         
