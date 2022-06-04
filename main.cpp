@@ -19,6 +19,9 @@
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+#define M_PI 3.1415926535897932384626433832795
 
 
 GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path){
@@ -184,10 +187,67 @@ class VAO{
         }
 };
 
+class Camera {
+    private:
+        glm::vec3 pos;
+        glm::quat yaw;
+        glm::quat pitch;
+        glm::vec2 rotation;
+    public:
+        Camera(float x, float y, float z){
+            pos = {x, y, z};
+            yaw = {0, 0, 0, 1};
+            pitch = {0,0,0,1};
+            rotation = {0.0,0.0};
+        }
+        void move(int key){
+            auto orientation = yaw*pitch;
+            auto quatFront = orientation * glm::quat(0,0,0,-1) * glm::conjugate(orientation);
+            glm::vec3 front(quatFront.x, quatFront.y, quatFront.z);
+            glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0,1,0)));
+            if(key == GLFW_KEY_A){
+                pos -= right;
+            }
+            else if(key == GLFW_KEY_D){
+                pos += right;
+            }
+            if(key == GLFW_KEY_S){
+                pos -= front;
+            }
+            else if(key == GLFW_KEY_W){
+                pos += front;
+            }
+            if(key == GLFW_KEY_C){
+                pos -= glm::vec3(0,1,0);
+            }
+            else if(key == GLFW_KEY_Q){
+                pos += glm::vec3(0,1,0);
+            }
+        }
+
+        void rotate(double relativeX, double relativeY){
+            //up and down
+            rotation.x += relativeY * 0.75;
+            rotation.x = glm::clamp(rotation.x, -90.0f, 90.0f);
+            pitch = glm::angleAxis(glm::radians(rotation.x), glm::vec3(-1,0,0));
+
+            //left to right
+            rotation.y += relativeX * 0.75;
+            rotation.y = glm::mod(rotation.y, 360.0f);
+            yaw = glm::angleAxis(glm::radians(rotation.y), glm::vec3(0,1,0));
+        }
+
+        glm::mat4 getViewMatrix() const
+        {
+            auto viewRot = glm::mat4_cast(glm::conjugate(yaw*pitch));
+            auto translation = glm::translate(glm::mat4(1.0f), -pos);
+            return viewRot*translation;
+        }
+};
+
 class MVP{
     private:
         glm::mat4 model;
-        glm::mat4 view;
         glm::mat4 projection;
     public:
         MVP(int width, int height){
@@ -199,24 +259,33 @@ class MVP{
                 0.1f,                   //near clipping plane, keep big (0.1)
                 100.0f                  //far clipping plane, keep little (100)
             );  
-
-            // Camera matrix
-            view = glm::lookAt(
-                glm::vec3(3,3,3), // where Camera is at in World Space
-                glm::vec3(0,0,0), // and looks at the origin
-                glm::vec3(0,1,0)  // Head is up (set to 0,-1,0 to look upside-down)
-            );
-
-            // view = glm::mat4(1.0f);
   
             // Model matrix : an identity matrix (model will be at the origin)
             model = glm::mat4(1.0f);
 
         }
-        glm::mat4 getMVP(){
-            return projection*view*model;
+        glm::mat4 getMVP(Camera const &camera){
+            return projection*camera.getViewMatrix()*model;
         }
 };
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    Camera* camera = static_cast<Camera*>(glfwGetWindowUserPointer(window));
+    camera->move(key);
+}
+
+static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    Camera* camera = static_cast<Camera*>(glfwGetWindowUserPointer(window));
+    static double lastX = xpos;
+    static double lastY = ypos;
+    double relativeX = xpos-lastX;
+    double relativeY = lastY-ypos;
+    camera->rotate(relativeX, relativeY);
+    lastX = xpos;
+    lastY = ypos;
+}
 
 int main(){
     //initialize glfw
@@ -237,7 +306,7 @@ int main(){
 
     //create a window
     GLFWwindow* window;
-    window = glfwCreateWindow(1040, 780, "Triangle", NULL, NULL);
+    window = glfwCreateWindow(1040, 780, "Colorful Cube", NULL, NULL);
     if( window == NULL ){
         fprintf( stderr, "Failed to open GLFW window. If you have an Intel GPU, they are not 3.3 compatible. Try the 2.1 version of the tutorials.\n" );
         glfwTerminate();
@@ -295,6 +364,8 @@ int main(){
     cB.setAttributes();
 
     IndexBuffer iB(indices);
+    
+    Camera camera{0, 0, 5};
 
     MVP mvp{1040, 780};
     
@@ -303,6 +374,12 @@ int main(){
     // Get a handle for our "MVP" uniform
     // Only during the initialisation
     GLuint MatrixID = glGetUniformLocation(programID, "MVP");
+
+    glfwSetWindowUserPointer(window, &camera);
+    glfwSetKeyCallback(window, key_callback);
+    glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // Ensure we can capture the escape key being pressed below
     glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
@@ -313,7 +390,7 @@ int main(){
 
         // Send our transformation to the currently bound shader, in the "MVP" uniform
         // This is done in the main loop since each model will have a different MVP matrix (At least for the M part)
-        glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(mvp.getMVP()));
+        glUniformMatrix4fv(MatrixID, 1, GL_FALSE, glm::value_ptr(mvp.getMVP(camera)));
 
         //use the shader
         glUseProgram(programID);
